@@ -1,16 +1,14 @@
 #property copyright "Estrategia BTC Guatemala"
-#property version   "2.20"
+#property version   "2.10"
 #include <Trade\Trade.mqh>
 CTrade trade;
 
-input double   Lote               = 0.04;    // Lote base (usar >= 0.04 para que aplique 75% y 50%)
-input double   Pct_Miercoles      = 50.0;    // % de lote a operar los Miercoles
-input double   Pct_Viernes        = 75.0;    // % de lote a operar los Viernes
+input double   Lote               = 0.1;
 input double   TP_Lunes           = 25.0;
-input double   TP_Martes          = 250.0;
-input double   TP_Miercoles       = 100.0;
+input double   TP_Martes          = 125.0;
+input double   TP_Miercoles       = 25.0;
 input double   TP_Jueves          = 500.0;
-input double   TP_Viernes         = 250.0;
+input double   TP_Viernes         = 125.0;
 input double   SL_Maximo_USD      = 800.0;
 input int      Offset_Servidor_GT = 6;
 input bool     Cerrar_Fin_Dia     = true;
@@ -27,24 +25,8 @@ int OnInit()
 {
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetTypeFillingBySymbol(_Symbol);
+   Print("EA Iniciado en ", _Symbol, " | Lote min: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN));
    return(INIT_SUCCEEDED);
-}
-
-double CalcularLoteDia(int dia_semana)
-{
-   double factor = 1.0;
-   if(dia_semana == 3) factor = Pct_Miercoles / 100.0;      // Miercoles = 50%
-   else if(dia_semana == 5) factor = Pct_Viernes / 100.0;   // Viernes = 75%
-
-   double vol_raw  = Lote * factor;
-   double vol_min  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double vol_max  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double vol_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-
-   double vol = MathFloor(vol_raw / vol_step) * vol_step;
-   if(vol < vol_min) vol = vol_min;
-   if(vol > vol_max) vol = vol_max;
-   return NormalizeDouble(vol, 2);
 }
 
 void OnTick()
@@ -90,7 +72,7 @@ void OnTick()
       bool vela_azul = (close_1 > open_1);
       bool vela_roja = (close_1 < open_1);
       int digitos = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-      double vol = CalcularLoteDia(dt_vela.day_of_week);
+      double vol = MathMax(Lote, SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN));
 
       double tp_hoy = TP_Lunes;
       if(dt_vela.day_of_week == 2) tp_hoy = TP_Martes;
