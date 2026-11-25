@@ -4,12 +4,12 @@
 CTrade trade;
 
 input double   Lote               = 0.01;
-input double   TP_Lunes           = 100.0;
+input double   TP_Lunes           = 25.0;
 input double   TP_Martes          = 250.0;
-input double   TP_Miercoles       = 200.0;
-input double   TP_Jueves          = 300.0;
+input double   TP_Miercoles       = 100.0;
+input double   TP_Jueves          = 500.0;
 input double   TP_Viernes         = 250.0;
-input double   SL_Maximo_USD      = 500.0;
+input double   SL_Maximo_USD      = 800.0;
 input int      Offset_Servidor_GT = 6;
 input bool     Cerrar_Fin_Dia     = true;
 input ulong    MagicNumber        = 20260809;
