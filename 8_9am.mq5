@@ -1,18 +1,34 @@
-#property copyright "Estrategia BTC Guatemala"
-#property version   "2.10"
+#property copyright "Estrategia Multi-Activo Guatemala"
+#property version   "3.00"
 #include <Trade\Trade.mqh>
 CTrade trade;
 
-input double   Lote               = 0.1;
-input double   TP_Lunes           = 25.0;
-input double   TP_Martes          = 125.0;
-input double   TP_Miercoles       = 25.0;
-input double   TP_Jueves          = 500.0;
-input double   TP_Viernes         = 125.0;
-input double   SL_Maximo_USD      = 800.0;
-input int      Offset_Servidor_GT = 6;
-input bool     Cerrar_Fin_Dia     = true;
-input ulong    MagicNumber        = 20260809;
+//--- FILTROS DE DÍAS ACTIVOS ---
+input bool     Operar_Lunes       = true;
+input bool     Operar_Martes      = false;
+input bool     Operar_Miercoles   = true;
+input bool     Operar_Jueves      = false;
+input bool     Operar_Viernes     = true;
+
+//--- LOTAJE POR DÍA ---
+input double   Lote_Lunes         = 0.01;
+input double   Lote_Martes        = 0.01;
+input double   Lote_Miercoles     = 0.01;
+input double   Lote_Jueves        = 0.01;
+input double   Lote_Viernes       = 0.01;
+
+//--- TAKE PROFIT POR DÍA (USD DE RECORRIDO EN EL PRECIO DEL ACTIVO) ---
+input double   TP_Lunes           = 15.0;    // Ej: 15.0 para Oro ($15 mov) o 100.0 para BTC
+input double   TP_Martes          = 250.0;   // Ej: 250.0 para BTC
+input double   TP_Miercoles       = 15.0;    // Ej: 15.0 para Oro
+input double   TP_Jueves          = 500.0;   // Ej: 300.0 para BTC
+input double   TP_Viernes         = 15.0;    // Ej: 15.0 para Oro
+
+//--- GESTIÓN DE RIESGO Y HORARIO ---
+input double   SL_Maximo_USD      = 100.0;   // Tope máximo de SL en recorrido de precio (Ej: 20.0 Oro / 500.0 BTC)
+input int      Offset_Servidor_GT = 6;       // Servidor Exness (UTC+0) menos Guatemala (UTC-6) = 6
+input bool     Cerrar_Fin_Dia     = true;    // Cerrar operaciones abiertas al final del día GT
+input ulong    MagicNumber        = 20260809;// Cambiar si usas 2 gráficos a la vez (ej: 202601 Oro, 202602 BTC)
 
 double   max_rango = 0.0, min_rango = 0.0;
 bool     operado_hoy = false, primer_log = false;
@@ -25,8 +41,44 @@ int OnInit()
 {
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetTypeFillingBySymbol(_Symbol);
-   Print("EA Iniciado en ", _Symbol, " | Lote min: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN));
    return(INIT_SUCCEEDED);
+}
+
+bool DiaActivo(int dia_sem)
+{
+   if(dia_sem == 1) return Operar_Lunes;
+   if(dia_sem == 2) return Operar_Martes;
+   if(dia_sem == 3) return Operar_Miercoles;
+   if(dia_sem == 4) return Operar_Jueves;
+   if(dia_sem == 5) return Operar_Viernes;
+   return false;
+}
+
+double ObtenerLoteDia(int dia_sem)
+{
+   double vol_raw = Lote_Lunes;
+   if(dia_sem == 2)      vol_raw = Lote_Martes;
+   else if(dia_sem == 3) vol_raw = Lote_Miercoles;
+   else if(dia_sem == 4) vol_raw = Lote_Jueves;
+   else if(dia_sem == 5) vol_raw = Lote_Viernes;
+
+   double vol_min  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double vol_max  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double vol_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+
+   double vol = MathFloor(vol_raw / vol_step) * vol_step;
+   if(vol < vol_min) vol = vol_min;
+   if(vol > vol_max) vol = vol_max;
+   return NormalizeDouble(vol, 2);
+}
+
+double ObtenerTPDia(int dia_sem)
+{
+   if(dia_sem == 2) return TP_Martes;
+   if(dia_sem == 3) return TP_Miercoles;
+   if(dia_sem == 4) return TP_Jueves;
+   if(dia_sem == 5) return TP_Viernes;
+   return TP_Lunes;
 }
 
 void OnTick()
@@ -45,7 +97,7 @@ void OnTick()
       esperando_confirmacion = 0;
    }
 
-   if(dt_gt.day_of_week < 1 || dt_gt.day_of_week > 5) return;
+   if(!DiaActivo(dt_gt.day_of_week)) return;
 
    datetime tiempo_vela_actual = iTime(_Symbol, PERIOD_M15, 0);
    if(tiempo_vela_actual == ultima_vela) return;
@@ -54,6 +106,8 @@ void OnTick()
    datetime tiempo_vela_cerrada_gt = iTime(_Symbol, PERIOD_M15, 1) - (Offset_Servidor_GT * 3600);
    MqlDateTime dt_vela;
    TimeToStruct(tiempo_vela_cerrada_gt, dt_vela);
+
+   if(!DiaActivo(dt_vela.day_of_week)) return;
 
    double open_1  = iOpen(_Symbol, PERIOD_M15, 1);
    double high_1  = iHigh(_Symbol, PERIOD_M15, 1);
@@ -71,14 +125,9 @@ void OnTick()
    {
       bool vela_azul = (close_1 > open_1);
       bool vela_roja = (close_1 < open_1);
-      int digitos = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-      double vol = MathMax(Lote, SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN));
-
-      double tp_hoy = TP_Lunes;
-      if(dt_vela.day_of_week == 2) tp_hoy = TP_Martes;
-      else if(dt_vela.day_of_week == 3) tp_hoy = TP_Miercoles;
-      else if(dt_vela.day_of_week == 4) tp_hoy = TP_Jueves;
-      else if(dt_vela.day_of_week == 5) tp_hoy = TP_Viernes;
+      int digitos    = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+      double vol     = ObtenerLoteDia(dt_vela.day_of_week);
+      double tp_hoy  = ObtenerTPDia(dt_vela.day_of_week);
 
       if(esperando_confirmacion == 0)
       {
@@ -165,7 +214,7 @@ void OnDeinit(const int reason)
    if(p_jue > max_p) { max_p = p_jue; peor = "Jueves"; }
    if(p_vie > max_p) { max_p = p_vie; peor = "Viernes"; }
 
-   Print("=== RESUMEN 2026 | Ganados: ", total_ganados, " | Perdidos: ", total_perdidos, " | Peor Dia: ", peor, " (", max_p, ") ===");
+   Print("=== RESUMEN ", _Symbol, " | Ganados: ", total_ganados, " | Perdidos: ", total_perdidos, " | Peor Dia: ", peor, " (", max_p, ") ===");
    Print("Perdidas -> Lun:", p_lun, " Mar:", p_mar, " Mie:", p_mie, " Jue:", p_jue, " Vie:", p_vie);
 }
 
