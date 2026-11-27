@@ -1,5 +1,5 @@
 #property copyright "Estrategia Multi-Activo Guatemala"
-#property version   "4.10"
+#property version   "4.30"
 #include <Trade\Trade.mqh>
 CTrade trade;
 
@@ -38,7 +38,7 @@ void EjecutarCompra(int d, double tp_h, double sl_m, int dig)
 {
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK), vol = CalcularLoteMaximo(ORDER_TYPE_BUY, ask);
    double sl = ((ask - min_rango) > sl_m) ? (ask - sl_m) : min_rango;
-   if(trade.Buy(vol, _Symbol, ask, NormalizeDouble(sl, dig), NormalizeDouble(ask + tp_h, dig), "Compra 8-9am GT"))
+   if(trade.Buy(vol, _Symbol, ask, NormalizeDouble(sl, dig), NormalizeDouble(ask + tp_h, dig), "Compra Cuerpo > Max"))
    { operado_hoy = true; esperando_confirmacion = 0; dia_semana_entrada = d; }
    else if(!primer_log) { Print("Error Buy: ", trade.ResultRetcodeDescription()); primer_log = true; }
 }
@@ -47,7 +47,7 @@ void EjecutarVenta(int d, double tp_h, double sl_m, int dig)
 {
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), vol = CalcularLoteMaximo(ORDER_TYPE_SELL, bid);
    double sl = ((max_rango - bid) > sl_m) ? (bid + sl_m) : max_rango;
-   if(trade.Sell(vol, _Symbol, bid, NormalizeDouble(sl, dig), NormalizeDouble(bid - tp_h, dig), "Venta 8-9am GT"))
+   if(trade.Sell(vol, _Symbol, bid, NormalizeDouble(sl, dig), NormalizeDouble(bid - tp_h, dig), "Venta Cuerpo < Min"))
    { operado_hoy = true; esperando_confirmacion = 0; dia_semana_entrada = d; }
    else if(!primer_log) { Print("Error Sell: ", trade.ResultRetcodeDescription()); primer_log = true; }
 }
@@ -81,23 +81,35 @@ void OnTick()
    if(dt_vela.hour >= 9 && !operado_hoy && max_rango > 0.0 && min_rango > 0.0 && !TienePosicionAbierta())
    {
       bool azul = (c1 > o1), roja = (c1 < o1);
+      double cuerpo_sup = MathMax(o1, c1), cuerpo_inf = MathMin(o1, c1);
+      bool parte_cuerpo_arriba = (cuerpo_sup > max_rango); // Parte del cuerpo supera la mecha maxima
+      bool parte_cuerpo_abajo  = (cuerpo_inf < min_rango); // Parte del cuerpo debajo de la mecha minima
+
       int dig = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
       double tp_h = ObtenerTPDia(dt_vela.day_of_week), sl_m = ObtenerSLMaxDia(dt_vela.day_of_week);
 
       if(esperando_confirmacion == 0)
       {
-         if(c1 > max_rango) { if(roja) EjecutarCompra(dt_vela.day_of_week, tp_h, sl_m, dig); else if(azul) esperando_confirmacion = 1; }
-         else if(c1 < min_rango) { if(azul) EjecutarVenta(dt_vela.day_of_week, tp_h, sl_m, dig); else if(roja) esperando_confirmacion = -1; }
+         if(parte_cuerpo_arriba)
+         {
+            if(roja) EjecutarCompra(dt_vela.day_of_week, tp_h, sl_m, dig);
+            else if(azul) esperando_confirmacion = 1;
+         }
+         else if(parte_cuerpo_abajo)
+         {
+            if(azul) EjecutarVenta(dt_vela.day_of_week, tp_h, sl_m, dig);
+            else if(roja) esperando_confirmacion = -1;
+         }
       }
       else if(esperando_confirmacion == 1)
       {
          if(c1 <= min_rango) { esperando_confirmacion = 0; operado_hoy = true; }
-         else if(roja) EjecutarCompra(dt_vela.day_of_week, tp_h, sl_m, dig);
+         else if(roja && parte_cuerpo_arriba) EjecutarCompra(dt_vela.day_of_week, tp_h, sl_m, dig);
       }
       else if(esperando_confirmacion == -1)
       {
          if(c1 >= max_rango) { esperando_confirmacion = 0; operado_hoy = true; }
-         else if(azul) EjecutarVenta(dt_vela.day_of_week, tp_h, sl_m, dig);
+         else if(azul && parte_cuerpo_abajo) EjecutarVenta(dt_vela.day_of_week, tp_h, sl_m, dig);
       }
    }
 }
