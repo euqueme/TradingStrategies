@@ -1,31 +1,37 @@
 #property copyright "Estrategia Multi-Activo Guatemala"
-#property version   "3.00"
+#property version   "3.10"
 #include <Trade\Trade.mqh>
 CTrade trade;
 
 //--- FILTROS DE DÍAS ACTIVOS ---
 input bool     Operar_Lunes       = true;
-input bool     Operar_Martes      = false;
+input bool     Operar_Martes      = true;
 input bool     Operar_Miercoles   = true;
-input bool     Operar_Jueves      = false;
+input bool     Operar_Jueves      = true;
 input bool     Operar_Viernes     = true;
 
 //--- LOTAJE POR DÍA ---
 input double   Lote_Lunes         = 0.01;
-input double   Lote_Martes        = 0.01;
+input double   Lote_Martes        = 0.04;
 input double   Lote_Miercoles     = 0.01;
-input double   Lote_Jueves        = 0.01;
+input double   Lote_Jueves        = 0.04;
 input double   Lote_Viernes       = 0.01;
 
 //--- TAKE PROFIT POR DÍA (USD DE RECORRIDO EN EL PRECIO DEL ACTIVO) ---
-input double   TP_Lunes           = 15.0;    // Ej: 15.0 para Oro ($15 mov) o 100.0 para BTC
-input double   TP_Martes          = 250.0;   // Ej: 250.0 para BTC
-input double   TP_Miercoles       = 15.0;    // Ej: 15.0 para Oro
-input double   TP_Jueves          = 500.0;   // Ej: 300.0 para BTC
-input double   TP_Viernes         = 15.0;    // Ej: 15.0 para Oro
+input double   TP_Lunes           = 15.0;
+input double   TP_Martes          = 250.0;
+input double   TP_Miercoles       = 15.0;
+input double   TP_Jueves          = 300.0;
+input double   TP_Viernes         = 15.0;
 
-//--- GESTIÓN DE RIESGO Y HORARIO ---
-input double   SL_Maximo_USD      = 100.0;   // Tope máximo de SL en recorrido de precio (Ej: 20.0 Oro / 500.0 BTC)
+//--- STOP LOSS MÁXIMO POR DÍA (USD DE RECORRIDO EN EL PRECIO DEL ACTIVO) ---
+input double   SL_Max_Lunes       = 20.0;
+input double   SL_Max_Martes      = 500.0;
+input double   SL_Max_Miercoles   = 20.0;
+input double   SL_Max_Jueves      = 500.0;
+input double   SL_Max_Viernes     = 20.0;
+
+//--- HORARIO Y CONTROL ---
 input int      Offset_Servidor_GT = 6;       // Servidor Exness (UTC+0) menos Guatemala (UTC-6) = 6
 input bool     Cerrar_Fin_Dia     = true;    // Cerrar operaciones abiertas al final del día GT
 input ulong    MagicNumber        = 20260809;// Cambiar si usas 2 gráficos a la vez (ej: 202601 Oro, 202602 BTC)
@@ -81,6 +87,15 @@ double ObtenerTPDia(int dia_sem)
    return TP_Lunes;
 }
 
+double ObtenerSLMaxDia(int dia_sem)
+{
+   if(dia_sem == 2) return SL_Max_Martes;
+   if(dia_sem == 3) return SL_Max_Miercoles;
+   if(dia_sem == 4) return SL_Max_Jueves;
+   if(dia_sem == 5) return SL_Max_Viernes;
+   return SL_Max_Lunes;
+}
+
 void OnTick()
 {
    datetime hora_gt_dt = TimeCurrent() - (Offset_Servidor_GT * 3600);
@@ -128,6 +143,7 @@ void OnTick()
       int digitos    = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
       double vol     = ObtenerLoteDia(dt_vela.day_of_week);
       double tp_hoy  = ObtenerTPDia(dt_vela.day_of_week);
+      double sl_max  = ObtenerSLMaxDia(dt_vela.day_of_week);
 
       if(esperando_confirmacion == 0)
       {
@@ -144,7 +160,7 @@ void OnTick()
          else if(vela_roja)
          {
             double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-            double sl = ((ask - min_rango) > SL_Maximo_USD) ? (ask - SL_Maximo_USD) : min_rango;
+            double sl = ((ask - min_rango) > sl_max) ? (ask - sl_max) : min_rango;
             if(trade.Buy(vol, _Symbol, ask, NormalizeDouble(sl, digitos), NormalizeDouble(ask + tp_hoy, digitos), "Compra Confirmada"))
             {
                operado_hoy = true;
@@ -168,7 +184,7 @@ void OnTick()
          else if(vela_azul)
          {
             double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-            double sl = ((max_rango - bid) > SL_Maximo_USD) ? (bid + SL_Maximo_USD) : max_rango;
+            double sl = ((max_rango - bid) > sl_max) ? (bid + sl_max) : max_rango;
             if(trade.Sell(vol, _Symbol, bid, NormalizeDouble(sl, digitos), NormalizeDouble(bid - tp_hoy, digitos), "Venta Confirmada"))
             {
                operado_hoy = true;
